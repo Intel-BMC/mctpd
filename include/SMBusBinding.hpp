@@ -46,7 +46,6 @@ class SMBusBinding : public MctpBinding
                              std::vector<uint8_t>& response) override;
     void addUnknownEIDToDeviceTable(const mctp_eid_t eid,
                                     void* bindingPrivate) override;
-    void triggerDeviceDiscovery() override;
 
   private:
     using DeviceTableEntry_t =
@@ -60,6 +59,7 @@ class SMBusBinding : public MctpBinding
     void startTimerAndReleaseBW(const uint16_t interval,
                                 const mctp_smbus_pkt_private prvt);
     bool releaseBandwidth(const mctp_eid_t eid) override;
+    void triggerDeviceDiscovery() override;
     std::string bus;
     bool arpMasterSupport;
     uint8_t bmcSlaveAddr;
@@ -90,8 +90,7 @@ class SMBusBinding : public MctpBinding
     void scanMuxBus(std::set<std::pair<int, uint8_t>>& deviceMap);
     mctp_eid_t
         getEIDFromDeviceTable(const std::vector<uint8_t>& bindingPrivate);
-    void processRoutingTableChangesBO(
-        std::vector<DeviceTableEntry_t>& newSMBusDeviceTable);
+    void removeDeviceTableEntry(const mctp_eid_t eid);
     void updateDiscoveredFlag(DiscoveryFlags flag);
     std::string convertToString(DiscoveryFlags flag);
     void restoreMuxIdleMode();
