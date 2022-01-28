@@ -277,7 +277,7 @@ class MctpBinding
                    std::function<void(PacketState, std::vector<uint8_t>&)>>>
         ctrlTxQueue;
     // <eid, uuid>
-    std::vector<std::pair<mctp_eid_t, std::string>> uuidTable;
+    std::unordered_map<mctp_eid_t, std::string> uuidTable;
 
     void createUuid();
     bool sendMctpCtrlMessage(mctp_eid_t destEid, std::vector<uint8_t> req,

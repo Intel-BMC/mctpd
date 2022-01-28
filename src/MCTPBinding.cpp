@@ -2088,7 +2088,7 @@ std::optional<mctp_eid_t> MctpBinding::busOwnerRegisterEndpoint(
     // Update the uuidTable with eid and the uuid of the endpoint registered.
     if (destUUID != nullUUID && eid != MCTP_EID_NULL)
     {
-        uuidTable.push_back(std::make_pair(eid, destUUID));
+        uuidTable.insert_or_assign(eid, destUUID);
     }
 
     return eid;
@@ -2220,11 +2220,11 @@ void MctpBinding::unregisterEndpoint(mctp_eid_t eid)
 std::optional<mctp_eid_t>
     MctpBinding::getEIDFromUUID(const std::string& uuidStr)
 {
-    for (const auto& uuidEntry : uuidTable)
+    for (const auto& [eid, deviceUUID] : uuidTable)
     {
-        if (uuidStr.compare(std::get<1>(uuidEntry)) == 0)
+        if (uuidStr.compare(deviceUUID) == 0)
         {
-            return std::get<0>(uuidEntry);
+            return eid;
         }
     }
     return std::nullopt;
@@ -2232,18 +2232,13 @@ std::optional<mctp_eid_t>
 
 void MctpBinding::clearRegisteredDevice(const mctp_eid_t eid)
 {
-    for (unsigned int tableItr = 0; tableItr < uuidTable.size(); tableItr++)
+    // Remove the entry from uuidTable, unregister the device and return EID to
+    // the pool.
+    auto removed = uuidTable.erase(eid);
+    if (removed == 1)
     {
-        if (std::get<0>(uuidTable[tableItr]) == eid)
-        {
-            // Remove the entry from uuidTable and unregister the device.
-            uuidTable.erase(uuidTable.begin() + static_cast<int32_t>(tableItr));
-            unregisterEndpoint(eid);
-            // Return EID to the pool of EIDs available for assignment
-            // as the Endpoint is non-responsive.
-            eidPool.updateEidStatus(eid, false);
-            break;
-        }
+        unregisterEndpoint(eid);
+        eidPool.updateEidStatus(eid, false);
     }
 }
 
