@@ -57,7 +57,7 @@ void setupPowerMatch(std::shared_ptr<sdbusplus::asio::connection> conn,
                                        ".Running");
 
             // on and off comes too quickly
-            int delayInSec = 3;
+            int delayInSec = 5;
             if (on)
             {
                 delayInSec = 10;

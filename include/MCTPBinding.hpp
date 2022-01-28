@@ -312,8 +312,10 @@ class MctpBinding
     MsgTypes getMsgTypes(const std::vector<uint8_t>& msgType);
     std::vector<uint8_t> getBindingMsgTypes();
     bool removeInterface(mctp_eid_t eid, endpointInterfaceMap& interfaces);
-    std::optional<mctp_eid_t> getEIDFromUUID(std::string& uuidStr);
+    std::optional<mctp_eid_t> getEIDFromUUID(const std::string& uuidStr);
     void clearRegisteredDevice(const mctp_eid_t eid);
-    bool isEIDMappedToUUID(mctp_eid_t& eid, std::string& destUUID);
+    bool isEIDMappedToUUID(const mctp_eid_t eid, const std::string& destUUID);
     bool isEIDRegistered(mctp_eid_t eid);
+    std::optional<mctp_eid_t>
+        getEIDForReregistration(const std::string& destUUID);
 };

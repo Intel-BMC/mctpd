@@ -1242,11 +1242,11 @@ bool MctpBinding::setEidCtrlCmd(boost::asio::yield_context& yield,
     return true;
 }
 
-static std::string formatUUID(guid_t& uuid)
+static std::string formatUUID(const guid_t& uuid)
 {
     const size_t safeBufferLength = 50;
     char buf[safeBufferLength] = {0};
-    auto ptr = reinterpret_cast<uint8_t*>(&uuid);
+    auto ptr = reinterpret_cast<const uint8_t*>(&uuid);
 
     snprintf(
         buf, safeBufferLength,
@@ -1863,7 +1863,8 @@ bool MctpBinding::isEIDRegistered(mctp_eid_t eid)
     return false;
 }
 
-bool MctpBinding::isEIDMappedToUUID(mctp_eid_t& eid, std::string& destUUID)
+bool MctpBinding::isEIDMappedToUUID(const mctp_eid_t eid,
+                                    const std::string& destUUID)
 {
     std::optional<mctp_eid_t> eidFromTable = getEIDFromUUID(destUUID);
     if (eidFromTable.has_value())
@@ -1878,12 +1879,24 @@ bool MctpBinding::isEIDMappedToUUID(mctp_eid_t& eid, std::string& destUUID)
             return true;
         }
         phosphor::logging::log<phosphor::logging::level::INFO>(
-            "Endpoint needs re-registration");
-        unregisterEndpoint(eidFromTable.value());
-        // Give priority for EID from UUID table while re-registering
-        eid = eidFromTable.value();
+            ("Endpoint needs re-registration. EID from device:" +
+             std::to_string(eid) +
+             " EID from table:" + std::to_string(eidFromTable.value()))
+                .c_str());
     }
     return false;
+}
+
+std::optional<mctp_eid_t>
+    MctpBinding::getEIDForReregistration(const std::string& destUUID)
+{
+    if (auto eidFromTable = getEIDFromUUID(destUUID))
+    {
+        unregisterEndpoint(eidFromTable.value());
+        // Give priority for EID from UUID table while re-registering
+        return eidFromTable.value();
+    }
+    return std::nullopt;
 }
 
 bool MctpBinding::isMCTPVersionSupported(const MCTPVersionFields& version)
@@ -1952,7 +1965,7 @@ std::optional<mctp_eid_t> MctpBinding::busOwnerRegisterEndpoint(
             "Get EID failed");
         return std::nullopt;
     }
-    mctp_ctrl_resp_get_eid* getEidRespPtr =
+    const mctp_ctrl_resp_get_eid* getEidRespPtr =
         reinterpret_cast<mctp_ctrl_resp_get_eid*>(getEidResp.data());
     std::optional<mctp_eid_t> destEID =
         checkEIDMismatchAndGetEID(eid, getEidRespPtr->eid);
@@ -1984,12 +1997,16 @@ std::optional<mctp_eid_t> MctpBinding::busOwnerRegisterEndpoint(
         getUuidResp.resize(sizeof(mctp_ctrl_resp_get_uuid), 0);
     }
 
-    mctp_ctrl_resp_get_uuid* getUuidRespPtr =
+    const mctp_ctrl_resp_get_uuid* getUuidRespPtr =
         reinterpret_cast<mctp_ctrl_resp_get_uuid*>(getUuidResp.data());
     std::string destUUID = formatUUID(getUuidRespPtr->uuid);
     if (isEIDMappedToUUID(getEidRespPtr->eid, destUUID))
     {
         return getEidRespPtr->eid;
+    }
+    if (auto uuidMappedEID = getEIDForReregistration(destUUID))
+    {
+        eid = uuidMappedEID.value();
     }
 
     if (!deviceWatcher.checkDeviceInitThreshold(bindingPrivate))
@@ -2200,7 +2217,8 @@ void MctpBinding::unregisterEndpoint(mctp_eid_t eid)
     }
 }
 
-std::optional<mctp_eid_t> MctpBinding::getEIDFromUUID(std::string& uuidStr)
+std::optional<mctp_eid_t>
+    MctpBinding::getEIDFromUUID(const std::string& uuidStr)
 {
     for (const auto& uuidEntry : uuidTable)
     {
