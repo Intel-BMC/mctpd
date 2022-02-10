@@ -694,45 +694,9 @@ void SMBusBinding::scanMuxBus(std::set<std::pair<int, uint8_t>>& deviceMap)
     }
 }
 
-void SMBusBinding::processRoutingTableChangesBO(
-    std::vector<DeviceTableEntry_t>& newSMBusDeviceTable)
-{
-    for (auto& deviceTableEntry : smbusDeviceTable)
-    {
-        if (!isDeviceEntryPresent(deviceTableEntry, newSMBusDeviceTable))
-        {
-            unregisterEndpoint(std::get<0>(deviceTableEntry));
-        }
-    }
-
-    for (auto& deviceTableEntry : newSMBusDeviceTable)
-    {
-        if (!isDeviceEntryPresent(deviceTableEntry, smbusDeviceTable))
-        {
-            struct mctp_smbus_pkt_private smbusBindingPvt =
-                std::get<1>(deviceTableEntry);
-            std::string busName(bus);
-
-            if (muxPortMap.count(smbusBindingPvt.fd) != 0)
-            {
-                auto itr = muxPortMap.find(smbusBindingPvt.fd);
-                busName.assign(std::to_string(itr->second));
-            }
-
-            phosphor::logging::log<phosphor::logging::level::INFO>(
-                ("SMBus device at bus:" + busName + ",8 bit address: " +
-                 std::to_string(smbusBindingPvt.slave_addr) +
-                 " registered at EID " +
-                 std::to_string(std::get<0>(deviceTableEntry)))
-                    .c_str());
-        }
-    }
-}
-
 void SMBusBinding::initEndpointDiscovery(boost::asio::yield_context& yield)
 {
     std::set<std::pair<int, uint8_t>> registerDeviceMap;
-    std::vector<DeviceTableEntry_t> newSMBusDeviceTable;
 
     if (addRootDevices)
     {
@@ -746,12 +710,6 @@ void SMBusBinding::initEndpointDiscovery(boost::asio::yield_context& yield)
     // Scan mux bus to get the list of fd and the corresponding slave address of
     // all the mux ports
     scanMuxBus(registerDeviceMap);
-
-    if (registerDeviceMap.empty())
-    {
-        phosphor::logging::log<phosphor::logging::level::DEBUG>(
-            "No device found");
-    }
 
     /* Since i2c muxes restrict that only one command needs to be
      * in flight, we cannot register multiple endpoints in parallel.
@@ -796,15 +754,55 @@ void SMBusBinding::initEndpointDiscovery(boost::asio::yield_context& yield)
 
         if (eid.has_value() && eid.value() != MCTP_EID_NULL)
         {
-            newSMBusDeviceTable.push_back(
-                std::make_pair(eid.value(), smbusBindingPvt));
+            DeviceTableEntry_t entry =
+                std::make_pair(eid.value(), smbusBindingPvt);
+            bool newEntry = !isDeviceEntryPresent(entry, smbusDeviceTable);
+            bool noDeviceUpdate = !newEntry && eid.value() == registeredEid;
+            bool deviceUpdated = !newEntry && eid.value() != registeredEid;
+
+            auto logDeviceDetails = [&]() {
+                std::string busName(bus);
+                if (muxPortMap.count(smbusBindingPvt.fd) != 0)
+                {
+                    auto itr = muxPortMap.find(smbusBindingPvt.fd);
+                    busName.assign(std::to_string(itr->second));
+                }
+
+                phosphor::logging::log<phosphor::logging::level::INFO>(
+                    ("SMBus device at bus:" + busName + ",8 bit address: " +
+                     std::to_string(smbusBindingPvt.slave_addr) +
+                     " registered at EID " + std::to_string(eid.value()))
+                        .c_str());
+            };
+
+            if (noDeviceUpdate)
+            {
+                continue;
+            }
+            else if (newEntry)
+            {
+                smbusDeviceTable.push_back(entry);
+                logDeviceDetails();
+            }
+            else if (deviceUpdated)
+            {
+                unregisterEndpoint(registeredEid);
+                removeDeviceTableEntry(registeredEid);
+                smbusDeviceTable.push_back(entry);
+                logDeviceDetails();
+            }
         }
     }
 
-    if (isDeviceTableChanged(smbusDeviceTable, newSMBusDeviceTable))
+    if (registerDeviceMap.empty())
     {
-        processRoutingTableChangesBO(newSMBusDeviceTable);
-        smbusDeviceTable = newSMBusDeviceTable;
+        phosphor::logging::log<phosphor::logging::level::DEBUG>(
+            "No device found");
+        for (auto& deviceTableEntry : smbusDeviceTable)
+        {
+            unregisterEndpoint(std::get<0>(deviceTableEntry));
+        }
+        smbusDeviceTable.clear();
     }
 }
 
@@ -940,6 +938,16 @@ bool SMBusBinding::handleGetVdmSupport(mctp_eid_t destEid,
     resp->command_set_type = vdmSetDatabase[setIndex].commandSetType;
 
     return true;
+}
+
+void SMBusBinding::removeDeviceTableEntry(const mctp_eid_t eid)
+{
+    smbusDeviceTable.erase(std::remove_if(smbusDeviceTable.begin(),
+                                          smbusDeviceTable.end(),
+                                          [eid](auto const& tableEntry) {
+                                              return (tableEntry.first == eid);
+                                          }),
+                           smbusDeviceTable.end());
 }
 
 mctp_eid_t SMBusBinding::getEIDFromDeviceTable(
