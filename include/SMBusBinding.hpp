@@ -48,6 +48,12 @@ class SMBusBinding : public MctpBinding
                                     void* bindingPrivate) override;
     void triggerDeviceDiscovery() override;
 
+    void populateDeviceProperties(
+        const mctp_eid_t eid,
+        const std::vector<uint8_t>& bindingPrivate) override;
+    std::optional<std::string>
+        getLocationCode(const std::vector<uint8_t>& bindingPrivate) override;
+
   private:
     using DeviceTableEntry_t =
         std::pair<mctp_eid_t /*eid*/,
@@ -85,6 +91,7 @@ class SMBusBinding : public MctpBinding
     int busOwnerFd;
     void scanDevices();
     std::map<int, int> getMuxFds(const std::string& rootPort);
+    int getBusNumByFd(const int fd);
     void scanPort(const int scanFd,
                   std::set<std::pair<int, uint8_t>>& deviceMap);
     void scanMuxBus(std::set<std::pair<int, uint8_t>>& deviceMap);

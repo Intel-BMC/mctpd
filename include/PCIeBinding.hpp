@@ -53,6 +53,10 @@ class PCIeBinding : public MctpBinding,
 
     void deviceReadyNotify(bool ready) override;
 
+    void populateDeviceProperties(
+        const mctp_eid_t eid,
+        const std::vector<uint8_t>& bindingPrivate) override;
+
     std::shared_ptr<hw::PCIeDriver> hw;
     std::shared_ptr<hw::DeviceMonitor> hwMonitor;
 

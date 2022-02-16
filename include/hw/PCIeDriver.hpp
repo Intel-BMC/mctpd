@@ -28,4 +28,22 @@ class PCIeDriver
     virtual ~PCIeDriver();
 };
 
+namespace bdf
+{
+static inline uint8_t getBus(uint16_t bdf)
+{
+    return static_cast<uint8_t>((bdf >> 8) & 0xff);
+}
+
+static inline uint8_t getDevice(uint16_t bdf)
+{
+    return static_cast<uint8_t>((bdf >> 3) & 0x1f);
+}
+
+static inline uint8_t getFunction(uint16_t bdf)
+{
+    return static_cast<uint8_t>(bdf & 0x07);
+}
+} // namespace bdf
+
 } // namespace hw

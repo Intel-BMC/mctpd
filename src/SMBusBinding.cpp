@@ -13,14 +13,18 @@ extern "C" {
 #include <boost/algorithm/string.hpp>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <phosphor-logging/log.hpp>
 #include <regex>
 #include <string>
+#include <xyz/openbmc_project/Inventory/Decorator/I2CDevice/server.hpp>
 #include <xyz/openbmc_project/MCTP/Binding/SMBus/server.hpp>
 
 #include "libmctp-msgtypes.h"
 using smbus_server =
     sdbusplus::xyz::openbmc_project::MCTP::Binding::server::SMBus;
+using I2CDeviceDecorator =
+    sdbusplus::xyz::openbmc_project::Inventory::Decorator::server::I2CDevice;
 
 namespace fs = std::filesystem;
 std::map<MuxIdleModes, std::string> muxIdleModesMap{
@@ -215,6 +219,23 @@ std::map<int, int> SMBusBinding::getMuxFds(const std::string& rootPort)
         }
     }
     return muxes;
+}
+
+int SMBusBinding::getBusNumByFd(const int fd)
+{
+    if (muxPortMap.count(fd))
+    {
+        return muxPortMap.at(fd);
+    }
+
+    std::string busNum;
+    if (getBusNumFromPath(bus, busNum))
+    {
+        return std::stoi(busNum);
+    }
+
+    // bus cannot be negative, return -1 on error
+    return -1;
 }
 
 std::optional<std::vector<uint8_t>>
@@ -694,6 +715,67 @@ void SMBusBinding::scanMuxBus(std::set<std::pair<int, uint8_t>>& deviceMap)
     }
 }
 
+std::optional<std::string>
+    SMBusBinding::getLocationCode(const std::vector<uint8_t>& bindingPrivate)
+{
+    const std::filesystem::path muxSymlinkDirPath("/dev/i2c-mux");
+    auto smbusBindingPvt =
+        reinterpret_cast<const mctp_smbus_pkt_private*>(bindingPrivate.data());
+    const size_t busNum = getBusNumByFd(smbusBindingPvt->fd);
+
+    if (!std::filesystem::exists(muxSymlinkDirPath) ||
+        !std::filesystem::is_directory(muxSymlinkDirPath))
+    {
+        phosphor::logging::log<phosphor::logging::level::WARNING>(
+            "/dev/i2c-mux does not exist");
+        return std::nullopt;
+    }
+    for (auto file :
+         std::filesystem::recursive_directory_iterator(muxSymlinkDirPath))
+    {
+        if (!file.is_symlink())
+        {
+            continue;
+        }
+        std::string linkPath =
+            std::filesystem::read_symlink(file.path()).string();
+        if (boost::algorithm::ends_with(linkPath,
+                                        "i2c-" + std::to_string(busNum)))
+        {
+            std::string slotName = file.path().filename().string();
+            // Only take the part before "_Mux" in mux name
+            std::string muxFullname =
+                file.path().parent_path().filename().string();
+            std::string muxName =
+                muxFullname.substr(0, muxFullname.find("_Mux"));
+            std::string location = muxName + ' ' + slotName;
+            std::replace(location.begin(), location.end(), '_', ' ');
+            return location;
+        }
+    }
+    return std::nullopt;
+}
+
+void SMBusBinding::populateDeviceProperties(
+    const mctp_eid_t eid, const std::vector<uint8_t>& bindingPrivate)
+{
+    auto smbusBindingPvt =
+        reinterpret_cast<const mctp_smbus_pkt_private*>(bindingPrivate.data());
+
+    std::string mctpEpObj =
+        "/xyz/openbmc_project/mctp/device/" + std::to_string(eid);
+
+    std::shared_ptr<dbus_interface> smbusIntf;
+    smbusIntf =
+        objectServer->add_interface(mctpEpObj, I2CDeviceDecorator::interface);
+    smbusIntf->register_property<size_t>("Bus",
+                                         getBusNumByFd(smbusBindingPvt->fd));
+    smbusIntf->register_property<size_t>("Address",
+                                         smbusBindingPvt->slave_addr);
+    smbusIntf->initialize();
+    deviceInterface.emplace(eid, std::move(smbusIntf));
+}
+
 void SMBusBinding::initEndpointDiscovery(boost::asio::yield_context& yield)
 {
     std::set<std::pair<int, uint8_t>> registerDeviceMap;
@@ -761,15 +843,10 @@ void SMBusBinding::initEndpointDiscovery(boost::asio::yield_context& yield)
             bool deviceUpdated = !newEntry && eid.value() != registeredEid;
 
             auto logDeviceDetails = [&]() {
-                std::string busName(bus);
-                if (muxPortMap.count(smbusBindingPvt.fd) != 0)
-                {
-                    auto itr = muxPortMap.find(smbusBindingPvt.fd);
-                    busName.assign(std::to_string(itr->second));
-                }
-
                 phosphor::logging::log<phosphor::logging::level::INFO>(
-                    ("SMBus device at bus:" + busName + ",8 bit address: " +
+                    ("SMBus device at bus:" +
+                     std::to_string(getBusNumByFd(smbusBindingPvt.fd)) +
+                     ", 8 bit address: " +
                      std::to_string(smbusBindingPvt.slave_addr) +
                      " registered at EID " + std::to_string(eid.value()))
                         .c_str());

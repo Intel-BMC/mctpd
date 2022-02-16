@@ -53,6 +53,7 @@ struct EndpointProperties
     // Vendor PCI ID Support
     std::vector<uint16_t> vendorIdCapabilitySets;
     std::string vendorIdFormat;
+    std::string locationCode;
 };
 
 struct MsgTypeSupportCtrlResp
@@ -144,6 +145,10 @@ class MctpBinding
 
     // vendor PCI Msg Interface
     endpointInterfaceMap vendorIdInterface;
+    // Location code Interface
+    endpointInterfaceMap locationCodeInterface;
+    // binding-specific device property Interface
+    endpointInterfaceMap deviceInterface;
 
     void initializeMctp();
     void initializeLogging(void);
@@ -228,6 +233,12 @@ class MctpBinding
                              mctp_server::BindingModeTypes::Endpoint);
     void unregisterEndpoint(mctp_eid_t eid);
 
+    virtual void
+        populateDeviceProperties(const mctp_eid_t eid,
+                                   const std::vector<uint8_t>& bindingPrivate);
+    virtual std::optional<std::string>
+        getLocationCode(const std::vector<uint8_t>& bindingPrivate);
+
     // MCTP Callbacks
     bool handleCtrlResp(void* msg, const size_t len);
     static void rxMessage(uint8_t srcEid, void* data, void* msg, size_t len,
@@ -302,7 +313,7 @@ class MctpBinding
                                  mctp_eid_t eid);
     void registerMsgTypes(std::shared_ptr<dbus_interface>& msgTypeIntf,
                           const MsgTypes& messageType);
-    bool populateEndpointProperties(const EndpointProperties& epProperties);
+    void populateEndpointProperties(const EndpointProperties& epProperties);
     void
         getVendorDefinedMessageTypes(boost::asio::yield_context yield,
                                      const std::vector<uint8_t>& bindingPrivate,

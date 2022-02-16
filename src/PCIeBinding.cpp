@@ -311,6 +311,30 @@ void PCIeBinding::updateRoutingTable()
     });
 }
 
+void PCIeBinding::populateDeviceProperties(
+    const mctp_eid_t eid, const std::vector<uint8_t>& bindingPrivate)
+{
+    auto pcieBindingPvt = reinterpret_cast<const mctp_astpcie_pkt_private*>(
+        bindingPrivate.data());
+
+    std::string mctpEpObj =
+        "/xyz/openbmc_project/mctp/device/" + std::to_string(eid);
+
+    std::shared_ptr<dbus_interface> pcieIntf;
+    // TODO: Replace the interface name string with sdbusplus header definition
+    // when the yaml file is merged to phosphor-dbus-interfaces
+    pcieIntf = objectServer->add_interface(
+        mctpEpObj, "xyz.openbmc_project.Inventory.Decorator.PCIDevice");
+    pcieIntf->register_property("Bus",
+                                hw::bdf::getBus(pcieBindingPvt->remote_id));
+    pcieIntf->register_property("Device",
+                                hw::bdf::getDevice(pcieBindingPvt->remote_id));
+    pcieIntf->register_property(
+        "Function", hw::bdf::getFunction(pcieBindingPvt->remote_id));
+    pcieIntf->initialize();
+    deviceInterface.emplace(eid, std::move(pcieIntf));
+}
+
 /* Function takes new routing table, detect changes and creates or removes
  * device interfaces on dbus.
  */
@@ -359,10 +383,11 @@ void PCIeBinding::processRoutingTableChanges(
              */
             std::stringstream busHex, deviceHex, functionHex;
             busHex << std::setfill('0') << std::setw(2) << std::hex
-                   << ((pciePrivate->remote_id & 0xFF00) >> 8);
+                   << hw::bdf::getBus(pciePrivate->remote_id);
             deviceHex << std::setfill('0') << std::setw(2) << std::hex
-                      << ((pciePrivate->remote_id & 0x00F8) >> 3);
-            functionHex << std::hex << (pciePrivate->remote_id & 0x07);
+                      << hw::bdf::getDevice(pciePrivate->remote_id);
+            functionHex << std::hex
+                        << hw::bdf::getFunction(pciePrivate->remote_id);
 
             std::string bus(busHex.str()), device(deviceHex.str()),
                 function(functionHex.str());
