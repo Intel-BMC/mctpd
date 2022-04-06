@@ -7,6 +7,7 @@ extern "C" {
 #include <errno.h>
 #include <i2c/smbus.h>
 #include <linux/i2c-dev.h>
+#include <sys/inotify.h>
 #include <sys/ioctl.h>
 }
 
@@ -365,15 +366,16 @@ void SMBusBinding::startTimerAndReleaseBW(const uint16_t interval,
     });
 }
 
-SMBusBinding::SMBusBinding(std::shared_ptr<sdbusplus::asio::connection> conn,
-                           std::shared_ptr<object_server>& objServer,
-                           const std::string& objPath,
-                           const SMBusConfiguration& conf,
-                           boost::asio::io_context& ioc) :
+SMBusBinding::SMBusBinding(
+    std::shared_ptr<sdbusplus::asio::connection> conn,
+    std::shared_ptr<object_server>& objServer, const std::string& objPath,
+    const SMBusConfiguration& conf, boost::asio::io_context& ioc,
+    std::shared_ptr<boost::asio::posix::stream_descriptor>&& i2cMuxMonitor) :
     MctpBinding(conn, objServer, objPath, conf, ioc,
                 mctp_server::BindingTypes::MctpOverSmbus),
     smbusReceiverFd(ioc), reserveBWTimer(ioc), scanTimer(ioc),
-    addRootDevices(true)
+    addRootDevices(true), muxMonitor{std::move(i2cMuxMonitor)},
+    refreshMuxTimer(ioc)
 {
     smbusInterface = objServer->add_interface(objPath, smbus_server::interface);
 
@@ -560,6 +562,94 @@ void SMBusBinding::setMuxIdleMode(const MuxIdleModes mode)
     muxIdleModeFlag = true;
 }
 
+inline void SMBusBinding::handleMuxInotifyEvent(const std::string& name)
+{
+    if (boost::starts_with(name, "i2c-"))
+    {
+        phosphor::logging::log<phosphor::logging::level::DEBUG>(
+            ("Detected change on bus " + name).c_str());
+
+        // Delay 1s to refresh only once as multiple i2c
+        // buses will change when handling mux
+        refreshMuxTimer.expires_after(std::chrono::seconds(1));
+        refreshMuxTimer.async_wait(
+            [this](const boost::system::error_code& ec2) {
+                // Calling expires_after will invoke this handler with
+                // operation_aborted, just ignore it as we only need to
+                // rescan mux on last inotify event
+                if (ec2 == boost::asio::error::operation_aborted)
+                {
+                    return;
+                }
+
+                std::string rootPort;
+                if (!getBusNumFromPath(bus, rootPort))
+                {
+                    throwRunTimeError("Error in finding root port");
+                }
+
+                phosphor::logging::log<phosphor::logging::level::INFO>(
+                    "i2c bus change detected, refreshing "
+                    "muxPortMap");
+                muxPortMap = getMuxFds(rootPort);
+                scanTimer.cancel();
+            });
+    }
+}
+
+void SMBusBinding::monitorMuxChange()
+{
+    static std::array<char, 4096> readBuffer;
+
+    muxMonitor->async_read_some(
+        boost::asio::buffer(readBuffer),
+        [&](const boost::system::error_code& ec, std::size_t bytesTransferred) {
+            if (ec)
+            {
+                phosphor::logging::log<phosphor::logging::level::ERR>(
+                    ("monitorMuxChange: Callback Error " + ec.message())
+                        .c_str());
+                return;
+            }
+            size_t index = 0;
+            while ((index + sizeof(inotify_event)) <= bytesTransferred)
+            {
+                // Using reinterpret_cast gives a cast-align error here
+                inotify_event event;
+                const char* eventPtr = &readBuffer[index];
+                memcpy(&event, eventPtr, sizeof(inotify_event));
+                switch (event.mask)
+                {
+                    case IN_CREATE:
+                    case IN_MOVED_TO:
+                    case IN_DELETE:
+                        std::string name(eventPtr + sizeof(inotify_event),
+                                         event.len);
+                        handleMuxInotifyEvent(name);
+                }
+                index += sizeof(inotify_event) + event.len;
+            }
+            monitorMuxChange();
+        });
+}
+
+void SMBusBinding::setupMuxMonitor()
+{
+    int fd = inotify_init1(IN_NONBLOCK);
+    if (fd < 0)
+    {
+        throwRunTimeError("inotify_init failed");
+    }
+    int watch =
+        inotify_add_watch(fd, "/dev", IN_CREATE | IN_MOVED_TO | IN_DELETE);
+    if (watch < 0)
+    {
+        throwRunTimeError("inotify_add_watch failed");
+    }
+    muxMonitor->assign(fd);
+    monitorMuxChange();
+}
+
 void SMBusBinding::initializeBinding()
 {
     try
@@ -582,8 +672,10 @@ void SMBusBinding::initializeBinding()
         return;
     }
 
-    scanDevices();
     setupPowerMatch(connection, this);
+    setupMuxMonitor();
+
+    scanDevices();
 }
 
 SMBusBinding::~SMBusBinding()
