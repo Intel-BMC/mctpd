@@ -623,8 +623,7 @@ void SMBusBinding::monitorMuxChange()
                     case IN_CREATE:
                     case IN_MOVED_TO:
                     case IN_DELETE:
-                        std::string name(eventPtr + sizeof(inotify_event),
-                                         event.len);
+                        std::string name(eventPtr + sizeof(inotify_event));
                         handleMuxInotifyEvent(name);
                 }
                 index += sizeof(inotify_event) + event.len;
