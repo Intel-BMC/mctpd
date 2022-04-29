@@ -13,6 +13,7 @@ struct Configuration
     uint8_t defaultEid;
     unsigned int reqToRespTime;
     uint8_t reqRetryCount;
+    std::set<std::string> allowedBuses;
 
     virtual ~Configuration();
 };

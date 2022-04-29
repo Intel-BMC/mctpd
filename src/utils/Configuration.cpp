@@ -17,7 +17,8 @@
 using json = nlohmann::json;
 
 using ConfigurationField =
-    std::variant<bool, uint64_t, std::string, std::vector<uint64_t>>;
+    std::variant<bool, uint64_t, std::string, std::vector<uint64_t>,
+                 std::vector<std::string>>;
 
 using ConfigurationMap = std::unordered_map<std::string, ConfigurationField>;
 
@@ -119,6 +120,23 @@ static bool getField(const json& configuration, const std::string& fieldName,
                 .c_str());
         return false;
     }
+}
+
+template <typename T>
+std::set<std::string> getAllowedBuses(const T& map)
+{
+    std::vector<std::string> allowedBuses;
+    if (!getField(map, "AllowedBuses", allowedBuses))
+    {
+        phosphor::logging::log<phosphor::logging::level::ERR>(
+            "Allowed buses list not found in MCTPD configuration. Everything "
+            "will be white listed");
+    }
+    phosphor::logging::log<phosphor::logging::level::WARNING>(
+        (std::string("Allowed buses in config : ") +
+         std::to_string(allowedBuses.size()))
+            .c_str());
+    return std::set<std::string>(allowedBuses.begin(), allowedBuses.end());
 }
 
 template <typename T>
@@ -235,6 +253,7 @@ static std::optional<SMBusConfiguration> getSMBusConfiguration(const T& map)
     config.reqToRespTime = static_cast<unsigned int>(reqToRespTimeMs);
     config.reqRetryCount = static_cast<uint8_t>(reqRetryCount);
     config.scanInterval = scanInterval;
+    config.allowedBuses = getAllowedBuses(map);
 
     return config;
 }

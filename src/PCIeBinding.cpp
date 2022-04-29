@@ -638,6 +638,7 @@ void PCIeBinding::initializeBinding()
 
     mctp_set_rx_all(mctp, &MctpBinding::rxMessage,
                     static_cast<MctpBinding*>(this));
+    // TODO. Set call back for bridging packets.
     mctp_set_rx_ctrl(mctp, &MctpBinding::handleMCTPControlRequests,
                      static_cast<MctpBinding*>(this));
     mctp_binding_set_tx_enabled(binding, true);

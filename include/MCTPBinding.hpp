@@ -1,5 +1,7 @@
 #pragma once
 
+#include "routing_table.hpp"
+#include "service_scanner.hpp"
 #include "utils/Configuration.hpp"
 #include "utils/device_watcher.hpp"
 #include "utils/eid_pool.hpp"
@@ -121,6 +123,16 @@ class MctpBinding
 
     void handleCtrlReq(uint8_t destEid, void* bindingPrivate, const void* req,
                        size_t len, uint8_t msgTag);
+    // Get own service name
+    inline const std::string& getDbusName() const
+    {
+        return serviceName;
+    }
+    // Set own service name
+    inline void setDbusName(const std::string& sName)
+    {
+        serviceName = sName;
+    }
 
   protected:
     std::shared_ptr<sdbusplus::asio::connection> connection;
@@ -139,6 +151,9 @@ class MctpBinding
     mctpd::MctpTransmissionQueue transmissionQueue;
     mctpd::DeviceWatcher deviceWatcher{};
     mctpd::EidPool eidPool;
+    mctpd::RoutingTable routingTable;
+    bridging::MCTPServiceScanner mctpServiceScanner;
+    std::string serviceName = "xyz.openbmc_project.MCTP";
 
     std::unordered_map<uint8_t, version_entry>
         versionNumbersForUpperLayerResponder;
@@ -183,6 +198,8 @@ class MctpBinding
                                      void* bindingPrivate,
                                      std::vector<uint8_t>& request,
                                      std::vector<uint8_t>& response);
+    virtual bool handleGetRoutingTable(const std::vector<uint8_t>& request,
+                                       std::vector<uint8_t>& response);
     virtual void addUnknownEIDToDeviceTable(const mctp_eid_t eid,
                                             void* bindingPrivate);
     bool getEidCtrlCmd(boost::asio::yield_context& yield,
@@ -235,7 +252,7 @@ class MctpBinding
 
     virtual void
         populateDeviceProperties(const mctp_eid_t eid,
-                                   const std::vector<uint8_t>& bindingPrivate);
+                                 const std::vector<uint8_t>& bindingPrivate);
     virtual std::optional<std::string>
         getLocationCode(const std::vector<uint8_t>& bindingPrivate);
 
@@ -243,6 +260,9 @@ class MctpBinding
     bool handleCtrlResp(void* msg, const size_t len);
     static void rxMessage(uint8_t srcEid, void* data, void* msg, size_t len,
                           bool tagOwner, uint8_t msgTag, void* bindingPrivate);
+    // Handler for bridging packets.
+    static void onRawMessage(void* data, void* msg, size_t len,
+                             void* msgBindingPrivate);
     static void handleMCTPControlRequests(uint8_t srcEid, void* data, void* msg,
                                           size_t len, bool tagOwner,
                                           uint8_t msgTag, void* bindingPrivate);
@@ -265,6 +285,9 @@ class MctpBinding
     void logUnsupportedMCTPVersion(
         const std::vector<struct MCTPVersionFields> versionsData,
         const mctp_eid_t eid);
+    virtual void
+        updateRoutingTableEntry(mctpd::RoutingTable::Entry entry,
+                                const std::vector<uint8_t>& privateData);
 
     // Register MCTP responder for upper layer
     std::vector<InternalVdmSetDatabase> vdmSetDatabase;
@@ -329,4 +352,14 @@ class MctpBinding
     bool isEIDRegistered(mctp_eid_t eid);
     std::optional<mctp_eid_t>
         getEIDForReregistration(const std::string& destUUID);
+    MctpStatus sendMctpRawPayload(const std::vector<uint8_t>& data);
+
+    void sendRoutingTableEntries(
+        const std::vector<mctpd::RoutingTable::Entry::MCTPLibData>& entries,
+        std::optional<std::vector<uint8_t>> bindingPrivateData,
+        const mctp_eid_t eid = 0);
+    void sendNewRoutingTableEntryToAllBridges(
+        const mctpd::RoutingTable::Entry& entry);
+    void sendRoutingTableEntriesToBridge(
+        const mctp_eid_t bridge, const std::vector<uint8_t>& bindingPrivate);
 };

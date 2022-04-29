@@ -54,6 +54,9 @@ class SMBusBinding : public MctpBinding
         const std::vector<uint8_t>& bindingPrivate) override;
     std::optional<std::string>
         getLocationCode(const std::vector<uint8_t>& bindingPrivate) override;
+    void updateRoutingTableEntry(
+        mctpd::RoutingTable::Entry entry,
+        const std::vector<uint8_t>& privateData) override;
 
   private:
     using DeviceTableEntry_t =

@@ -63,6 +63,7 @@ ExternalProject_Add(
 ExternalProject_Add(
   libmctp-intel
   GIT_REPOSITORY "ssh://git-amr-2.devtools.intel.com:29418/openbmc-libmctp"
+  GIT_TAG a8e37688ae769eeb269cf213f2a76451a7a8541a
   SOURCE_DIR "${CMAKE_BINARY_DIR}/src/libmctp"
   INSTALL_DIR "${CMAKE_BINARY_DIR}/libs/libmctp"
   CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=<INSTALL_DIR>

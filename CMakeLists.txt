@@ -65,7 +65,9 @@ set(SRC_FILES
     ${PROJECT_SOURCE_DIR}/src/utils/Configuration.cpp
     ${PROJECT_SOURCE_DIR}/src/utils/device_watcher.cpp
     ${PROJECT_SOURCE_DIR}/src/utils/transmission_queue.cpp
-    ${PROJECT_SOURCE_DIR}/src/utils/eid_pool.cpp)
+    ${PROJECT_SOURCE_DIR}/src/utils/eid_pool.cpp
+    ${PROJECT_SOURCE_DIR}/src/routing_table.cpp
+    ${PROJECT_SOURCE_DIR}/src/service_scanner.cpp)
 
 set(HEADER_FILES
     ${PROJECT_SOURCE_DIR}/include/MCTPBinding.hpp
