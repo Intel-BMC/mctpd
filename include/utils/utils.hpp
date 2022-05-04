@@ -5,6 +5,7 @@
 #include <phosphor-logging/log.hpp>
 #include <sdbusplus/asio/connection.hpp>
 #include <sdbusplus/bus/match.hpp>
+
 static std::unique_ptr<sdbusplus::bus::match::match> powerMatch = nullptr;
 
 namespace power
@@ -81,4 +82,19 @@ void setupPowerMatch(std::shared_ptr<sdbusplus::asio::connection> conn,
                 bindingPtr->triggerDeviceDiscovery();
             });
         });
+}
+
+inline std::string formatUUID(const guid_t& uuid)
+{
+    const size_t safeBufferLength = 50;
+    char buf[safeBufferLength] = {0};
+    auto ptr = reinterpret_cast<const uint8_t*>(&uuid);
+
+    snprintf(
+        buf, safeBufferLength,
+        "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+        ptr[0], ptr[1], ptr[2], ptr[3], ptr[4], ptr[5], ptr[6], ptr[7], ptr[8],
+        ptr[9], ptr[10], ptr[11], ptr[12], ptr[13], ptr[14], ptr[15]);
+    // UUID is in RFC4122 format. Ex: 61a39523-78f2-11e5-9862-e6402cfc3223
+    return std::string(buf);
 }

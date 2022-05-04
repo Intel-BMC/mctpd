@@ -67,12 +67,23 @@ set(SRC_FILES
     ${PROJECT_SOURCE_DIR}/src/utils/transmission_queue.cpp
     ${PROJECT_SOURCE_DIR}/src/utils/eid_pool.cpp
     ${PROJECT_SOURCE_DIR}/src/routing_table.cpp
-    ${PROJECT_SOURCE_DIR}/src/service_scanner.cpp)
+    ${PROJECT_SOURCE_DIR}/src/service_scanner.cpp
+    ${PROJECT_SOURCE_DIR}/src/mctp_dbus_interfaces.cpp
+    ${PROJECT_SOURCE_DIR}/src/mctp_device.cpp
+    ${PROJECT_SOURCE_DIR}/src/mctp_endpoint.cpp
+    ${PROJECT_SOURCE_DIR}/src/mctp_bridge.cpp
+    )
 
 set(HEADER_FILES
     ${PROJECT_SOURCE_DIR}/include/MCTPBinding.hpp
     ${PROJECT_SOURCE_DIR}/include/SMBusBinding.hpp
-    ${PROJECT_SOURCE_DIR}/include/PCIeBinding.hpp)
+    ${PROJECT_SOURCE_DIR}/include/PCIeBinding.hpp
+    ${PROJECT_SOURCE_DIR}/include/mctp_dbus_interfaces.hpp
+    ${PROJECT_SOURCE_DIR}/include/mctp_device.hpp
+    ${PROJECT_SOURCE_DIR}/include/mctp_cmd_encoder.hpp
+    ${PROJECT_SOURCE_DIR}/include/mctp_endpoint.hpp
+    ${PROJECT_SOURCE_DIR}/include/mctp_bridge.hpp
+    )
 
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
