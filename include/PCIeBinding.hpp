@@ -62,7 +62,8 @@ class PCIeBinding : public MctpBinding,
 
   private:
     using routingTableEntry_t =
-        std::tuple<uint8_t /*eid*/, uint16_t /*bdf*/, uint8_t /*entryType*/>;
+        std::tuple<uint8_t /*eid*/, uint16_t /*bdf*/, uint8_t /*entryType*/,
+                   uint8_t /*poolEid*/, uint8_t /*range*/>;
     using calledBridgeEntry_t = std::tuple<uint8_t /*eid*/, uint16_t /*bdf*/>;
     uint16_t bdf;
     uint16_t busOwnerBdf;
@@ -106,4 +107,7 @@ class PCIeBinding : public MctpBinding,
     mctp_server::BindingModeTypes
         getBindingMode(const routingTableEntry_t& routingEntry);
     void changeDiscoveredFlag(pcie_binding::DiscoveryFlags flag);
+    void updateBridgePool(std::vector<routingTableEntry_t>& rt,
+                          const uint8_t startingEidPool, const uint8_t poolSize,
+                          const uint16_t physAddr);
 };

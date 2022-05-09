@@ -108,11 +108,12 @@ bool PCIeBinding::isEntryInRoutingTable(
     get_routing_table_entry* routingEntry,
     const std::vector<routingTableEntry_t>& rt)
 {
-    return std::find_if(rt.begin(), rt.end(),
-                        [&routingEntry](const auto& entry) {
-                            const auto& [eid, endpointBdf, entryType] = entry;
-                            return routingEntry->starting_eid == eid;
-                        }) != rt.end();
+    return std::find_if(
+               rt.begin(), rt.end(), [&routingEntry](const auto& entry) {
+                   const auto& [eid, endpointBdf, entryType, poolEid, range] =
+                       entry;
+                   return routingEntry->starting_eid == eid;
+               }) != rt.end();
 }
 
 bool PCIeBinding::isActiveEntryBehindBridge(
@@ -165,6 +166,24 @@ bool PCIeBinding::isBridgeCalled(
                         }) != calledBridges.end();
 }
 
+void PCIeBinding::updateBridgePool(std::vector<routingTableEntry_t>& rt,
+                                   const uint8_t startingEidPool,
+                                   const uint8_t poolSize,
+                                   const uint16_t physAddr)
+{
+    auto it = find_if(rt.begin(), rt.end(), [&](const auto& entry) {
+        const auto& [endpointEid, endpointBdf, entryType, poolEid, range] =
+            entry;
+        return (endpointBdf == physAddr && isEntryBridge(entry));
+    });
+
+    if (it != rt.end())
+    {
+        std::get<3>(*it) = startingEidPool;
+        std::get<4>(*it) = poolSize;
+    }
+}
+
 void PCIeBinding::readRoutingTable(
     std::vector<routingTableEntry_t>& rt,
     std::vector<calledBridgeEntry_t>& calledBridges,
@@ -172,6 +191,7 @@ void PCIeBinding::readRoutingTable(
     uint8_t eid, uint16_t physAddr, long entryIndex)
 {
     std::vector<uint8_t> getRoutingTableEntryResp = {};
+    std::vector<routingTableEntry_t> tmpEndpointRoutingTable;
     uint8_t entryHandle = 0x00;
     uint8_t responseCount = 0;
     long insertIndex = entryIndex + 1;
@@ -216,27 +236,59 @@ void PCIeBinding::readRoutingTable(
                 rt.push_back(std::make_tuple(
                     routingTableEntry->starting_eid, entryPhysAddr,
                     SET_ROUTING_ENTRY_TYPE(routingTableEntry->entry_type,
-                                           MCTP_ROUTING_ENTRY_BRIDGE)));
+                                           MCTP_ROUTING_ENTRY_BRIDGE),
+                    routingTableEntry->starting_eid,
+                    routingTableEntry->eid_range_size));
             }
             else if (eid == busOwnerEid &&
                      !(GET_ROUTING_ENTRY_TYPE(routingTableEntry->entry_type) ==
                        MCTP_ROUTING_ENTRY_ENDPOINTS))
             {
-                rt.push_back(std::make_tuple(routingTableEntry->starting_eid,
-                                             entryPhysAddr,
-                                             routingTableEntry->entry_type));
+                rt.push_back(std::make_tuple(
+                    routingTableEntry->starting_eid, entryPhysAddr,
+                    routingTableEntry->entry_type,
+                    routingTableEntry->starting_eid,
+                    routingTableEntry->eid_range_size));
             }
             else if (eid != busOwnerEid &&
                      isActiveEntryBehindBridge(routingTableEntry, rt))
             {
-                rt.insert(rt.begin() + insertIndex,
-                          std::make_tuple(routingTableEntry->starting_eid,
-                                          physAddr,
-                                          routingTableEntry->entry_type));
-                insertIndex++;
+                tmpEndpointRoutingTable.push_back(
+                    std::make_tuple(routingTableEntry->starting_eid, physAddr,
+                                    routingTableEntry->entry_type,
+                                    routingTableEntry->starting_eid,
+                                    routingTableEntry->eid_range_size));
+            }
+            else if (GET_ROUTING_ENTRY_TYPE(routingTableEntry->entry_type) ==
+                     MCTP_ROUTING_ENTRY_ENDPOINTS)
+            {
+                updateBridgePool(rt, routingTableEntry->starting_eid,
+                                 routingTableEntry->eid_range_size,
+                                 entryPhysAddr);
             }
         }
         entryHandle = routingTableHdr->next_entry_handle;
+    }
+
+    auto it = find_if(rt.begin(), rt.end(), [&](const auto& entry) {
+        const auto& [endpointEid, endpointBdf, entryType, poolEid, range] =
+            entry;
+        return (endpointBdf == physAddr && endpointEid == eid);
+    });
+    if (it != rt.end())
+    {
+        const auto& [endpointEid, endpointBdf, entryType, poolEid, range] = *it;
+
+        for (auto entry = tmpEndpointRoutingTable.begin();
+             entry != tmpEndpointRoutingTable.end(); entry++)
+        {
+            if (std::get<0>(*entry) >= poolEid &&
+                std::get<0>(*entry) < poolEid + range)
+            {
+                rt.insert(rt.begin() + insertIndex, *entry);
+                insertIndex++;
+            }
+        }
     }
 }
 
@@ -405,7 +457,7 @@ bool PCIeBinding::setDriverEndpointMap(
 {
     std::vector<hw::EidInfo> endpoints;
 
-    for (const auto& [eid, busDevFunc, type] : newTable)
+    for (const auto& [eid, busDevFunc, type, poolEid, range] : newTable)
     {
         endpoints.push_back({eid, busDevFunc});
     }
@@ -702,18 +754,18 @@ std::optional<std::vector<uint8_t>>
     mctp_astpcie_pkt_private pktPrv = {};
 
     pktPrv.routing = PCIE_ROUTE_BY_ID;
-    auto it = find_if(routingTable.begin(), routingTable.end(),
-                      [&dstEid](const auto& entry) {
-                          const auto& [eid, endpointBdf, entryType] = entry;
-                          return eid == dstEid;
-                      });
+    auto it = find_if(
+        routingTable.begin(), routingTable.end(), [&dstEid](const auto& entry) {
+            const auto& [eid, endpointBdf, entryType, poolEid, range] = entry;
+            return eid == dstEid;
+        });
     if (it == routingTable.end())
     {
         phosphor::logging::log<phosphor::logging::level::INFO>(
             "Eid not found in routing table");
         return std::nullopt;
     }
-    const auto& [eid, endpointBdf, entryType] = *it;
+    const auto& [eid, endpointBdf, entryType, poolEid, range] = *it;
     pktPrv.remote_id = endpointBdf;
     uint8_t* pktPrvPtr = reinterpret_cast<uint8_t*>(&pktPrv);
     return std::vector<uint8_t>(pktPrvPtr, pktPrvPtr + sizeof(pktPrv));
