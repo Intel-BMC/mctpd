@@ -103,7 +103,8 @@ class SMBusBinding : public MctpBinding
     void scanMuxBus(std::set<std::pair<int, uint8_t>>& deviceMap);
     mctp_eid_t
         getEIDFromDeviceTable(const std::vector<uint8_t>& bindingPrivate);
-    void removeDeviceTableEntry(const mctp_eid_t eid);
+    std::vector<DeviceTableEntry_t>::iterator
+        removeDeviceTableEntry(const mctp_eid_t eid);
     void updateDiscoveredFlag(DiscoveryFlags flag);
     std::string convertToString(DiscoveryFlags flag);
     void restoreMuxIdleMode();
