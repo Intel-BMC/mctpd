@@ -74,9 +74,9 @@ class PCIeBinding : public MctpBinding,
     std::vector<routingTableEntry_t> routingTable;
     void endpointDiscoveryFlow();
     void updateRoutingTable();
-    void processRoutingTableChanges(
-        const std::vector<routingTableEntry_t>& newTable,
-        boost::asio::yield_context& yield, const std::vector<uint8_t>& prvData);
+    void processRoutingTableChanges(std::vector<routingTableEntry_t>& newTable,
+                                    boost::asio::yield_context& yield,
+                                    const std::vector<uint8_t>& prvData);
     void processBridgeEntries(std::vector<routingTableEntry_t>& rt,
                               std::vector<calledBridgeEntry_t>& calledBridges,
                               boost::asio::yield_context& yield);

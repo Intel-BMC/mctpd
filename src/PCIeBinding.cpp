@@ -391,7 +391,7 @@ void PCIeBinding::populateDeviceProperties(
  * device interfaces on dbus.
  */
 void PCIeBinding::processRoutingTableChanges(
-    const std::vector<routingTableEntry_t>& newTable,
+    std::vector<routingTableEntry_t>& newTable,
     boost::asio::yield_context& yield, const std::vector<uint8_t>& prvData)
 {
     /* find removed endpoints, in case entry is not present
@@ -411,8 +411,10 @@ void PCIeBinding::processRoutingTableChanges(
      * routing table but not present in the routing table stored as
      * the class member, register new dbus device interface
      */
-    for (auto& routingEntry : newTable)
+    auto it = newTable.begin();
+    while (it != newTable.end())
     {
+        auto& routingEntry = *it;
         if (find(routingTable.begin(), routingTable.end(), routingEntry) ==
             routingTable.end())
         {
@@ -420,6 +422,7 @@ void PCIeBinding::processRoutingTableChanges(
 
             if (remoteEid == ownEid)
             {
+                it++;
                 continue;
             }
 
@@ -427,8 +430,20 @@ void PCIeBinding::processRoutingTableChanges(
             mctp_astpcie_pkt_private* pciePrivate =
                 reinterpret_cast<mctp_astpcie_pkt_private*>(prvDataCopy.data());
             pciePrivate->remote_id = std::get<1>(routingEntry);
-            registerEndpoint(yield, prvDataCopy, remoteEid,
-                             getBindingMode(routingEntry));
+
+            /* Remove the endpoint failed to register from routing table, so it
+             * will be treated as new endpoint and mctpd will try to register it
+             * in next update */
+            if (!registerEndpoint(yield, prvDataCopy, remoteEid,
+                                  getBindingMode(routingEntry)))
+            {
+                phosphor::logging::log<phosphor::logging::level::WARNING>(
+                    ("Register endpoint " + std::to_string(remoteEid) +
+                     " failed, removing from routing table")
+                        .c_str());
+                it = newTable.erase(it);
+                continue;
+            }
 
             /* Log the device info:
              * Bus - 8 bits, Device - 5 bits, Function - 3 bits
@@ -449,6 +464,7 @@ void PCIeBinding::processRoutingTableChanges(
                  " registered at EID " + std::to_string(remoteEid))
                     .c_str());
         }
+        it++;
     }
 }
 
